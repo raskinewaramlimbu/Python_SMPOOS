@@ -10,7 +10,7 @@ from dash.exceptions import PreventUpdate
 from models.location import Location, LocationType, LocationStatus
 from models.route import Route, RouteType, RouteStatus
 from models.notification import Notification, AlertType, Severity
-from models.user import UserRole
+from models.user import UserRole, ROLE_PERMISSIONS
 
 CHART_TEMPLATE = 'plotly_white'
 COLOUR_SEQUENCE = px.colors.qualitative.Set2
@@ -597,6 +597,101 @@ def register_callbacks(app, repo, analytics):
                 return True, dbc.Alert(f'Error: {e}', color='danger')
 
         raise PreventUpdate
+
+    # ── Login / logout ──────────────────────────────────────────────────────────
+    LOGIN_STYLE = {'minHeight': '100vh', 'paddingTop': '40px',
+                   'backgroundColor': '#f0f4f8'}
+
+    @app.callback(
+        Output('session-store', 'data'),
+        Output('login-page', 'style'),
+        Output('main-content', 'style'),
+        Output('login-feedback', 'children'),
+        Input('btn-login-id', 'n_clicks'),
+        Input('btn-login-role', 'n_clicks'),
+        Input('btn-logout', 'n_clicks'),
+        State('login-user-id', 'value'),
+        State('login-role-select', 'value'),
+        prevent_initial_call=True,
+    )
+    def handle_auth(_n1, _n2, _n3, user_id_input, role_input):
+        ctx = callback_context
+        if not ctx.triggered:
+            raise PreventUpdate
+        trigger = ctx.triggered[0]['prop_id'].split('.')[0]
+
+        if trigger == 'btn-logout':
+            return None, LOGIN_STYLE, {'display': 'none'}, ''
+
+        if trigger == 'btn-login-id':
+            if not user_id_input:
+                return no_update, no_update, no_update, dbc.Alert(
+                    'Please enter a User ID.', color='warning', className='mb-0')
+            uid = user_id_input.strip().upper()
+            user = repo.get_user(uid)
+            if not user:
+                return no_update, no_update, no_update, dbc.Alert(
+                    f'User "{uid}" not found.', color='danger', className='mb-0')
+            if not user.active:
+                return no_update, no_update, no_update, dbc.Alert(
+                    f'Account {uid} is inactive.', color='warning', className='mb-0')
+            session = {'user_id': user.user_id, 'name': user.name,
+                       'role': user.role.value}
+            return session, {'display': 'none'}, {}, ''
+
+        if trigger == 'btn-login-role':
+            if not role_input:
+                return no_update, no_update, no_update, dbc.Alert(
+                    'Please select a role.', color='warning', className='mb-0')
+            matching = [u for u in repo.users
+                        if u.role.value == role_input and u.active]
+            if not matching:
+                return no_update, no_update, no_update, dbc.Alert(
+                    f'No active {role_input} users found.',
+                    color='danger', className='mb-0')
+            user = matching[0]
+            session = {'user_id': user.user_id, 'name': user.name,
+                       'role': user.role.value}
+            return session, {'display': 'none'}, {}, ''
+
+        raise PreventUpdate
+
+    # ── Navbar user info ────────────────────────────────────────────────────────
+    @app.callback(
+        Output('navbar-user-info', 'children'),
+        Input('session-store', 'data'),
+    )
+    def update_navbar_user(session_data):
+        if not session_data:
+            return ''
+        return [
+            html.I(className='bi bi-person-circle me-1'),
+            html.Span(f"{session_data['name']} "),
+            dbc.Badge(session_data['role'], color='info', pill=True, className='ms-1'),
+        ]
+
+    # ── Permission enforcement ──────────────────────────────────────────────────
+    @app.callback(
+        Output('nav-tab-analytics', 'disabled'),
+        Output('nav-tab-audit', 'disabled'),
+        Output('btn-add-location', 'style'),
+        Output('btn-add-route', 'style'),
+        Output('btn-add-notification', 'style'),
+        Input('session-store', 'data'),
+    )
+    def apply_permissions(session_data):
+        hidden = {'display': 'none'}
+        if not session_data:
+            return True, True, hidden, hidden, hidden
+        role = UserRole(session_data['role'])
+        perms = ROLE_PERMISSIONS.get(role, set())
+        return (
+            'view_analytics' not in perms,
+            'view_audit_log' not in perms,
+            {} if 'manage_locations' in perms else hidden,
+            {} if 'manage_routes' in perms else hidden,
+            {} if 'manage_notifications' in perms else hidden,
+        )
 
     # ── Audit log table ─────────────────────────────────────────────────────────
     @app.callback(

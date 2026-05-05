@@ -1,6 +1,8 @@
 import dash_bootstrap_components as dbc
 from dash import dcc, html, dash_table
 
+from models.user import UserRole
+
 
 SEVERITY_BADGE = {
     'Low': 'success',
@@ -17,6 +19,70 @@ STATUS_BADGE = {
     'Closed': 'danger',
     'Restricted': 'warning',
 }
+
+
+def _login_page() -> html.Div:
+    role_options = [{'label': r.value, 'value': r.value} for r in UserRole]
+    return html.Div([
+        dbc.Container([
+            dbc.Row([
+                dbc.Col([
+                    html.Div([
+                        html.I(className='bi bi-anchor display-3 text-primary mb-2'),
+                        html.H2('SMPOOS', className='fw-bold'),
+                        html.P('HarbourView International Port Management System',
+                               className='text-muted'),
+                    ], className='text-center mb-4'),
+                    dbc.Card([
+                        dbc.CardBody([
+                            html.H5('Sign In', className='fw-bold mb-4 text-center'),
+
+                            dbc.Label('User ID', html_for='login-user-id'),
+                            dbc.InputGroup([
+                                dbc.InputGroupText(html.I(className='bi bi-person')),
+                                dbc.Input(id='login-user-id',
+                                          placeholder='e.g. U0001',
+                                          type='text'),
+                            ], className='mb-2'),
+                            dbc.Button(
+                                [html.I(className='bi bi-box-arrow-in-right me-2'),
+                                 'Login with User ID'],
+                                id='btn-login-id',
+                                color='primary',
+                                className='w-100 mb-4',
+                            ),
+
+                            dbc.Row([
+                                dbc.Col(html.Hr()),
+                                dbc.Col(html.Small('or', className='text-muted'),
+                                        width='auto', className='d-flex align-items-center px-0'),
+                                dbc.Col(html.Hr()),
+                            ], className='mb-3 align-items-center'),
+
+                            dbc.Label('Quick login by role (RBAC testing)',
+                                      className='text-muted small fw-semibold'),
+                            dcc.Dropdown(
+                                id='login-role-select',
+                                options=role_options,
+                                placeholder='Select a role…',
+                                clearable=False,
+                                className='mb-2',
+                            ),
+                            dbc.Button(
+                                'Login as Role',
+                                id='btn-login-role',
+                                color='outline-secondary',
+                                className='w-100',
+                            ),
+
+                            html.Div(id='login-feedback', className='mt-3'),
+                        ]),
+                    ], className='shadow-sm border-0'),
+                ], md=5, lg=4),
+            ], justify='center', className='pt-5'),
+        ]),
+    ], id='login-page',
+       style={'minHeight': '100vh', 'paddingTop': '40px', 'backgroundColor': '#f0f4f8'})
 
 
 def kpi_card(title: str, value, subtitle: str = '', colour: str = 'primary',
@@ -46,7 +112,16 @@ def build_layout(repo, analytics) -> html.Div:
                      html.Span(id='live-clock')],
                     className='text-light',
                 )),
-            ], className='ms-auto'),
+                html.Span(id='navbar-user-info',
+                          className='text-light ms-3 d-flex align-items-center'),
+                dbc.Button(
+                    [html.I(className='bi bi-box-arrow-right me-1'), 'Logout'],
+                    id='btn-logout',
+                    color='outline-light',
+                    size='sm',
+                    className='ms-3',
+                ),
+            ], className='ms-auto align-items-center'),
         ], fluid=True),
         color='dark',
         dark=True,
@@ -71,22 +146,28 @@ def build_layout(repo, analytics) -> html.Div:
                 tab_class_name='fw-semibold'),
         dbc.Tab(_analytics_tab(),
                 label='Analytics', tab_id='tab-analytics',
+                id='nav-tab-analytics',
                 tab_class_name='fw-semibold'),
         dbc.Tab(_audit_tab(),
                 label='Audit Log', tab_id='tab-audit',
+                id='nav-tab-audit',
                 tab_class_name='fw-semibold'),
     ], id='main-tabs', active_tab='tab-overview', className='mb-4')
 
     return html.Div([
+        dcc.Store(id='session-store', storage_type='memory'),
         dcc.Interval(id='clock-interval', interval=1000, n_intervals=0),
         dcc.Interval(id='refresh-interval', interval=30000, n_intervals=0),
         dcc.Store(id='selected-location-store'),
         dcc.Store(id='selected-route-store'),
-        navbar,
-        dbc.Container([tabs], fluid=True),
-        _location_modal(),
-        _route_status_modal(),
-        _notification_modal(),
+        _login_page(),
+        html.Div(id='main-content', style={'display': 'none'}, children=[
+            navbar,
+            dbc.Container([tabs], fluid=True),
+            _location_modal(),
+            _route_status_modal(),
+            _notification_modal(),
+        ]),
     ])
 
 
